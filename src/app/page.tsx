@@ -20,7 +20,7 @@ export default function Home() {
             인터넷 어디엔가 있을까?
           </h1>
           <p className="hero-description">
-            사진 한 장으로 공개된 동일 이미지와 유사 얼굴 후보를 찾아보세요.
+            사진 한 장으로 공개 웹에 올라온 동일 이미지와 편집된 복사본을 찾아보세요.
             결과는 내가 직접 확인하고, 등록한 사진은 검색 후 삭제됩니다.
           </p>
           <div className="hero-actions">
@@ -31,7 +31,9 @@ export default function Home() {
               어떻게 찾나요?
             </a>
           </div>
-          <p className="hero-note">현재는 실제 검색 API를 사용하지 않는 기능 확인용 데모입니다.</p>
+          <p className="hero-note">
+            Google 공개 웹 색인을 검색하며, 결과가 없어도 인터넷에 사진이 없다는 뜻은 아닙니다.
+          </p>
         </div>
         <div className="search-preview" aria-label="검색 결과 미리보기">
           <div className="preview-topline">
@@ -74,21 +76,21 @@ export default function Home() {
             <span>1</span>
             <div>
               <h3>사진 한 장 등록</h3>
-              <p>얼굴이 선명하게 나온 본인 사진을 선택해요.</p>
+              <p>인터넷 노출 여부를 확인하고 싶은 본인 사진을 선택해요.</p>
             </div>
           </li>
           <li>
             <span>2</span>
             <div>
               <h3>공개 웹 자동 검색</h3>
-              <p>동일·변형 이미지와 유사 얼굴 후보를 함께 찾아요.</p>
+              <p>동일 이미지와 자르기·편집된 복사본이 있는 공개 페이지를 찾아요.</p>
             </div>
           </li>
           <li>
             <span>3</span>
             <div>
               <h3>내가 직접 확인</h3>
-              <p>후보를 살펴보고 실제 내 사진인지 판단해요.</p>
+              <p>원문 페이지를 열어 실제 복사본인지 직접 확인해요.</p>
             </div>
           </li>
         </ol>
@@ -103,7 +105,7 @@ export default function Home() {
           <ul className="check-list">
             <li>본인 사진만 검색할 수 있어요.</li>
             <li>운영자가 결과를 판정하지 않아요.</li>
-            <li>검색 결과는 동일인 확정이 아닌 확인 후보예요.</li>
+            <li>다른 사진 속 동일 인물을 찾는 얼굴인식 서비스가 아니에요.</li>
             <li>검색이 끝나면 등록 사진을 삭제해요.</li>
           </ul>
         </div>
