@@ -75,7 +75,7 @@ export async function POST(request: Request) {
     jobId: crypto.randomUUID(),
     mode: "mock",
     candidates: deduplicateCandidates(candidates),
-    searchedSources: ["동일 이미지 검색 데모", "유사 얼굴 검색 데모"],
+    searchedSources: provider.searchedSources,
     completedAt,
   });
 }

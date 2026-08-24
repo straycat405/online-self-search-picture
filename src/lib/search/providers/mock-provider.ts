@@ -12,6 +12,8 @@ const MOCK_THUMBNAILS = [
 
 export class MockSearchProvider implements SearchProvider {
   readonly name = "mock";
+  readonly mode = "mock";
+  readonly searchedSources = ["동일 이미지 검색 데모", "크롭·부분 일치 검색 데모"];
 
   async search(input: SearchInput): Promise<SearchCandidate[]> {
     if (!input.mimeType.startsWith("image/")) {
@@ -32,8 +34,8 @@ export class MockSearchProvider implements SearchProvider {
         foundAt: "2026-08-24T10:00:00.000Z",
       },
       {
-        id: "mock-face-1",
-        matchType: "face",
+        id: "mock-partial-1",
+        matchType: "partial",
         tier: "strong",
         sourceUrl: "https://sample.blog/post/two",
         sourceDomain: "sample.blog",
@@ -42,8 +44,8 @@ export class MockSearchProvider implements SearchProvider {
         foundAt: "2026-08-24T10:00:00.000Z",
       },
       {
-        id: "mock-face-2",
-        matchType: "face",
+        id: "mock-partial-2",
+        matchType: "partial",
         tier: "review",
         sourceUrl: "https://news.example.org/article/three",
         sourceDomain: "news.example.org",

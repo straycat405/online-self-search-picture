@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" role="img" aria-labelledby="title desc">
+  <title id="title">웹 이미지 일치 결과</title>
+  <desc id="desc">개인정보 보호를 위해 외부 사이트 이미지를 자동으로 불러오지 않습니다.</desc>
+  <rect width="640" height="480" rx="32" fill="#f3f7ff"/>
+  <rect x="180" y="100" width="280" height="220" rx="28" fill="#fff" stroke="#b9ccf7" stroke-width="12"/>
+  <circle cx="260" cy="180" r="34" fill="#9cb9f2"/>
+  <path d="M205 285l74-70 48 45 45-38 63 63H205z" fill="#5f8de8"/>
+  <circle cx="437" cy="318" r="72" fill="#2563eb"/>
+  <circle cx="437" cy="318" r="32" fill="none" stroke="#fff" stroke-width="14"/>
+  <path d="M487 368l47 47" stroke="#fff" stroke-width="18" stroke-linecap="round"/>
+</svg>

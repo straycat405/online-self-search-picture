@@ -22,7 +22,7 @@ export type SearchInput = {
 
 export type SearchResponse = {
   jobId: string;
-  mode: "mock" | "supabase-mock";
+  mode: "mock" | "supabase-mock" | "supabase-live";
   candidates: SearchCandidate[];
   searchedSources: string[];
   completedAt: string;
@@ -36,5 +36,7 @@ export type SearchJobCreatedResponse = {
 
 export interface SearchProvider {
   readonly name: string;
+  readonly mode: "mock" | "live";
+  readonly searchedSources: string[];
   search(input: SearchInput): Promise<SearchCandidate[]>;
 }

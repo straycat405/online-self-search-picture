@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { deduplicateCandidates } from "@/lib/search/normalize";
-import { MockSearchProvider } from "@/lib/search/providers/mock-provider";
-import type { SearchCandidate } from "@/lib/search/types";
+import { createSearchProvider } from "@/lib/search/providers/provider-factory";
+import type { SearchCandidate, SearchProvider } from "@/lib/search/types";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function POST(
@@ -79,9 +79,10 @@ export async function POST(
   }
 
   const imageBytes = new Uint8Array(await photo.arrayBuffer());
-  const provider = new MockSearchProvider();
+  let provider: SearchProvider;
   let rawCandidates: SearchCandidate[];
   try {
+    provider = createSearchProvider();
     rawCandidates = await provider.search({
       fileName,
       fileSize: job.file_size,
@@ -134,9 +135,9 @@ export async function POST(
 
   return NextResponse.json({
     jobId,
-    mode: "supabase-mock",
+    mode: provider.mode === "live" ? "supabase-live" : "supabase-mock",
     candidates,
-    searchedSources: ["동일 이미지 검색 데모", "유사 얼굴 검색 데모"],
+    searchedSources: provider.searchedSources,
     completedAt,
   });
 }

@@ -16,13 +16,17 @@ type Verdict = "self" | "not_self";
 
 const progressSteps = [
   "사진 상태를 확인하고 있어요",
-  "동일하거나 편집된 이미지를 찾고 있어요",
-  "유사한 얼굴 후보를 확인하고 있어요",
+  "공개 웹의 동일 이미지를 찾고 있어요",
+  "크롭되거나 편집된 이미지를 찾고 있어요",
   "중복 결과를 정리하고 있어요",
 ];
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_FILE_SIZE = 7 * 1024 * 1024;
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+function isSupabaseResult(response: SearchResponse): boolean {
+  return response.mode === "supabase-mock" || response.mode === "supabase-live";
+}
 
 export function PhotoSearchFlow() {
   const [flowState, setFlowState] = useState<FlowState>("upload");
@@ -49,8 +53,8 @@ export function PhotoSearchFlow() {
   const resultCounts = useMemo(() => {
     const candidates = response?.candidates ?? [];
     return {
-      exact: candidates.filter((candidate) => candidate.matchType !== "face").length,
-      face: candidates.filter((candidate) => candidate.matchType === "face").length,
+      exact: candidates.filter((candidate) => candidate.matchType === "exact").length,
+      partial: candidates.filter((candidate) => candidate.matchType === "partial").length,
     };
   }, [response]);
 
@@ -64,7 +68,7 @@ export function PhotoSearchFlow() {
       return;
     }
     if (nextFile.size > MAX_FILE_SIZE) {
-      setError("사진 용량은 10MB 이하로 선택해주세요.");
+      setError("사진 용량은 7MB 이하로 선택해주세요.");
       return;
     }
 
@@ -194,7 +198,7 @@ export function PhotoSearchFlow() {
   }
 
   async function resetSearch() {
-    if (response?.mode === "supabase-mock" && isSupabaseBrowserConfigured()) {
+    if (response && isSupabaseResult(response) && isSupabaseBrowserConfigured()) {
       const supabase = createSupabaseBrowserClient();
       if (uploadedPhotoPath) {
         const { error: removeError } = await supabase.storage
@@ -258,17 +262,27 @@ export function PhotoSearchFlow() {
     return (
       <section className="flow-shell results-shell">
         <div className="demo-banner">
-          {response.mode === "supabase-mock"
-            ? "비공개 저장 흐름을 사용한 데모 결과입니다"
-            : "기능 확인용 데모 결과입니다"}
+          {response.mode === "supabase-live"
+            ? "Google 공개 웹의 동일·부분 일치 이미지 검색 결과입니다"
+            : response.mode === "supabase-mock"
+              ? "비공개 저장 흐름을 사용한 데모 결과입니다"
+              : "기능 확인용 데모 결과입니다"}
         </div>
         <div className="result-summary">
           <p className="eyebrow">검색 완료</p>
-          <h1>확인해 볼 후보가 {response.candidates.length}건 있어요</h1>
-          <p>
-            동일 이미지 {resultCounts.exact}건과 유사 얼굴 후보 {resultCounts.face}건을
-            찾았어요. 실제 본인인지는 직접 확인해주세요.
-          </p>
+          <h1>
+            {response.candidates.length
+              ? `유력한 일치 결과가 ${response.candidates.length}건 있어요`
+              : "유력한 일치 결과를 찾지 못했어요"}
+          </h1>
+          {response.candidates.length ? (
+            <p>
+              동일 이미지 {resultCounts.exact}건과 크롭·부분 일치 이미지{" "}
+              {resultCounts.partial}건을 찾았어요.
+            </p>
+          ) : (
+            <p>현재 확인 가능한 공개 웹 범위에서는 동일하거나 편집된 사진이 발견되지 않았어요.</p>
+          )}
         </div>
 
         <div className="candidate-list">
@@ -302,16 +316,16 @@ export function PhotoSearchFlow() {
             <span className="delete-icon" aria-hidden="true">✓</span>
             <div>
               <h2>
-                {response.mode === "supabase-mock" && photoDeletedAfterSearch
+                {isSupabaseResult(response) && photoDeletedAfterSearch
                   ? "검색이 끝나 등록 사진을 삭제했어요"
-                  : response.mode === "supabase-mock"
+                  : isSupabaseResult(response)
                     ? "등록 사진은 비공개 공간에 저장했어요"
                   : "등록 사진은 서버에 전송하지 않았어요"}
               </h2>
               <p>
-                {response.mode === "supabase-mock" && photoDeletedAfterSearch
+                {isSupabaseResult(response) && photoDeletedAfterSearch
                   ? "검색 결과만 남기고 원본 검색 사진은 즉시 정리했습니다."
-                  : response.mode === "supabase-mock"
+                  : isSupabaseResult(response)
                     ? "처리가 중단된 사진은 업로드 후 1시간이 지나면 자동 삭제를 재시도합니다."
                   : "현재 데모에서는 브라우저 안에서 미리보기 용도로만 사용했습니다."}
               </p>
@@ -334,8 +348,8 @@ export function PhotoSearchFlow() {
     <section className="flow-shell upload-flow">
       <div className="flow-heading">
         <p className="eyebrow">사진 등록</p>
-        <h1>검색할 본인 사진을 선택해주세요</h1>
-        <p>정면에 가깝고 얼굴이 선명한 사진일수록 좋은 후보를 찾는 데 유리해요.</p>
+        <h1>인터넷 노출 여부를 확인할 사진을 선택해주세요</h1>
+        <p>원본에 가까운 사진일수록 동일하거나 편집된 이미지를 찾는 데 유리해요.</p>
       </div>
 
       <button
@@ -352,7 +366,7 @@ export function PhotoSearchFlow() {
           <>
             <span className="upload-icon" aria-hidden="true">＋</span>
             <strong>사진 선택</strong>
-            <span>JPG, PNG, WebP · 최대 10MB</span>
+            <span>JPG, PNG, WebP · 최대 7MB</span>
           </>
         )}
       </button>
@@ -369,9 +383,9 @@ export function PhotoSearchFlow() {
       <div className="photo-tips">
         <h2>이런 사진이 좋아요</h2>
         <ul>
-          <li>얼굴이 화면의 3분의 1 이상인 사진</li>
-          <li>마스크나 선글라스로 얼굴을 가리지 않은 사진</li>
-          <li>다른 사람이 함께 나오지 않은 사진</li>
+          <li>메신저나 SNS에 올렸던 원본에 가까운 사진</li>
+          <li>과도하게 축소되거나 흐려지지 않은 사진</li>
+          <li>스크린샷보다 사진 파일 자체를 권장해요</li>
         </ul>
       </div>
 
@@ -390,7 +404,7 @@ export function PhotoSearchFlow() {
             onChange={(event) => setSelfConfirmed(event.target.checked)}
             type="checkbox"
           />
-          <span>본인 사진만 검색하며 결과가 동일인을 확정하지 않음을 확인했습니다.</span>
+          <span>본인 사진만 검색하며 공개 웹에서 확인 가능한 범위에 한계가 있음을 확인했습니다.</span>
         </label>
       </div>
 
@@ -400,7 +414,7 @@ export function PhotoSearchFlow() {
         onClick={startSearch}
         type="button"
       >
-        무료 데모 검색 시작
+        사진 검색 시작
       </button>
       <p className="privacy-note">
         {isSupabaseBrowserConfigured()
@@ -423,8 +437,8 @@ function CandidateCard({
   const label =
     candidate.matchType === "exact"
       ? "동일 이미지"
-      : candidate.tier === "strong"
-        ? "얼굴이 매우 유사한 후보"
+      : candidate.matchType === "partial"
+        ? "크롭·부분 일치"
         : "확인해 볼 후보";
 
   return (
@@ -450,14 +464,14 @@ function CandidateCard({
             onClick={() => onVerdict("self")}
             type="button"
           >
-            나와 같아요
+            내 사진이 맞아요
           </button>
           <button
             className={verdict === "not_self" ? "is-selected" : ""}
             onClick={() => onVerdict("not_self")}
             type="button"
           >
-            다른 사람이에요
+            관련 없는 결과예요
           </button>
         </div>
       </div>
