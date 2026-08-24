@@ -1,0 +1,42 @@
+-- Hosted cleanup smoke test. This creates no Storage object and uses no secret.
+-- Run the INSERT once, wait at least six minutes, then run the final SELECT.
+
+insert into public.search_jobs (
+  id,
+  user_id,
+  status,
+  mode,
+  mime_type,
+  file_size,
+  photo_object_path,
+  provider_plan,
+  created_at,
+  completed_at,
+  photo_delete_at,
+  result_delete_at,
+  photo_deleted_at
+)
+select
+  gen_random_uuid(),
+  users.id,
+  'complete',
+  'mock',
+  'image/png',
+  68,
+  null,
+  'cleanup-e2e-fixture',
+  now(),
+  now(),
+  now() - interval '1 minute',
+  now() - interval '1 minute',
+  now()
+from auth.users as users
+order by users.created_at desc
+limit 1
+returning id, provider_plan, result_delete_at;
+
+-- Immediately after the INSERT this should return 1.
+-- After the next five-minute cleanup run it should return 0.
+select count(*) as remaining_cleanup_fixtures
+from public.search_jobs
+where provider_plan = 'cleanup-e2e-fixture';

@@ -4,7 +4,7 @@ The application stays in mock-only mode until both public variables are present.
 
 1. Create a Supabase project in the Seoul (`ap-northeast-2`) region.
 2. Enable **Authentication > Providers > Anonymous Sign-Ins**.
-3. Run the SQL migration in `migrations/202608240001_initial_mvp.sql`.
+3. Run the SQL migrations in filename order (`001`, `002`, then `003`).
 4. Copy the project URL and publishable key into `.env.local`.
 5. Restart `pnpm dev`.
 
@@ -48,3 +48,11 @@ The recommended schedule is every five minutes. This is best-effort on the Free
 plan: a paused project catches up after resume, so it is not a strict deletion SLA.
 Do not manually delete anonymous Auth users until the orphan-photo sweep has been
 deployed and verified; deleting an Auth user cascades its job rows first.
+
+## Hosted verification
+
+After deployment, confirm an unauthenticated function request returns `401`, a
+request carrying `x-cleanup-secret` returns `200`, and scheduled invocations
+appear every five minutes. To smoke-test expiry without uploading a real photo,
+run the INSERT in `setup/verify_cleanup.sql.example`, wait at least six minutes,
+and run its final SELECT. The fixture count must change from `1` to `0`.
