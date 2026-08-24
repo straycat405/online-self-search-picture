@@ -1,11 +1,5 @@
-import { AppHeader } from "@/components/app-header";
-import { PhotoSearchFlow } from "@/components/photo-search-flow";
+import { redirect } from "next/navigation";
 
 export default function SearchPage() {
-  return (
-    <main className="app-page">
-      <AppHeader compact />
-      <PhotoSearchFlow />
-    </main>
-  );
+  redirect("/protect");
 }

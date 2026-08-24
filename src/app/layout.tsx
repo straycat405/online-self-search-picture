@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "모를 권리 | 내 사진 셀프검색",
-  description: "사진 한 장으로 공개된 동일·유사 이미지 후보를 확인해보세요.",
+  title: "안심 업로드 | 공유 전 개인정보 가림",
+  description: "사진과 화면 캡처 속 민감한 정보를 확인하고 가린 안전한 사본을 만드세요.",
   robots: { index: false, follow: false },
 };
 
