@@ -26,4 +26,5 @@ export type PrivacyScanResponse = {
   candidates: PrivacyCandidate[];
   processedBy: "google-cloud-vision";
   retained: false;
+  remainingScans?: number;
 };

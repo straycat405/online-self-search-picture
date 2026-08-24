@@ -495,6 +495,11 @@ button {
   background: var(--surface-blue);
 }
 
+.upload-box:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
 .upload-box.has-photo {
   border-style: solid;
   border-color: var(--line);
@@ -936,6 +941,17 @@ button {
   background: #fff;
   padding: 16px 18px;
   cursor: pointer;
+}
+
+.scan-option + .upload-box,
+.turnstile-wrap + .upload-box,
+.form-error + .upload-box {
+  margin-top: 16px;
+}
+
+.turnstile-wrap {
+  min-height: 65px;
+  margin-top: 14px;
 }
 
 .scan-option input {

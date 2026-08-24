@@ -13,6 +13,7 @@ import {
   normalizeQrDetections,
   type BarcodeDetection,
 } from "@/lib/privacy/local-barcode";
+import { TurnstileWidget } from "@/components/turnstile-widget";
 
 type ImageSize = { width: number; height: number };
 type DragState = { pointerId: number; start: { x: number; y: number } };
@@ -29,6 +30,11 @@ type BarcodeDetectorConstructor = new (options: { formats: string[] }) => Barcod
 
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_FILE_SIZE = 12 * 1024 * 1024;
+const CAPTCHA_REQUIRED =
+  process.env.NODE_ENV === "production" &&
+  process.env.NEXT_PUBLIC_PRIVACY_SCAN_CAPTCHA_REQUIRED !== "false";
+const TURNSTILE_SITE_KEY =
+  process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim() ?? "";
 
 async function readImageSize(file: File): Promise<ImageSize> {
   const bitmap = await createImageBitmap(file);
@@ -71,6 +77,8 @@ export function SafeUploadFlow() {
   const [scanNotice, setScanNotice] = useState<string | null>(null);
   const [qrNotice, setQrNotice] = useState<string | null>(null);
   const [showOtherText, setShowOtherText] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0);
 
   const selectedRegions = regions.filter((region) => region.selected);
   const otherTextCount = regions.filter(
@@ -136,6 +144,7 @@ export function SafeUploadFlow() {
     try {
       const response = await fetch("/api/privacy-scan", {
         method: "POST",
+        headers: captchaToken ? { "x-turnstile-token": captchaToken } : undefined,
         body: formData,
       });
       const data = (await response.json()) as PrivacyScanResponse | { message: string };
@@ -159,7 +168,7 @@ export function SafeUploadFlow() {
       const suggestedCount = automaticRegions.filter((region) => region.selected).length;
       setScanNotice(
         automaticRegions.length
-          ? `검토 영역 ${automaticRegions.length}개를 찾았고, 민감 정보 후보 ${suggestedCount}개를 먼저 선택했어요.`
+          ? `검토 영역 ${automaticRegions.length}개를 찾았고, 민감 정보 후보 ${suggestedCount}개를 먼저 선택했어요.${typeof data.remainingScans === "number" ? ` 오늘 자동 탐지는 ${data.remainingScans}회 남았어요.` : ""}`
           : "자동으로 찾은 영역이 없어요. 필요한 부분을 직접 드래그해주세요.",
       );
     } catch (caught) {
@@ -167,6 +176,10 @@ export function SafeUploadFlow() {
       setScanNotice(caught instanceof Error ? caught.message : "자동 탐지에 실패했어요. 수동 선택은 계속 사용할 수 있어요.");
     } finally {
       if (requestId === scanRequestRef.current) setIsScanning(false);
+      if (CAPTCHA_REQUIRED) {
+        setCaptchaToken(null);
+        setTurnstileResetKey((current) => current + 1);
+      }
     }
   }
 
@@ -296,18 +309,6 @@ export function SafeUploadFlow() {
           <h1>공유하기 전에 한 번 더 확인하세요</h1>
           <p>화면 캡처나 사진을 선택하면, 가릴 부분을 직접 표시해 안전한 사본을 만들 수 있어요.</p>
         </div>
-        <button className="upload-box" onClick={() => inputRef.current?.click()} type="button">
-          <span className="upload-icon" aria-hidden="true">＋</span>
-          <strong>이미지 선택</strong>
-          <span>JPG, PNG, WebP · 최대 12MB</span>
-        </button>
-        <input
-          accept={ACCEPTED_TYPES.join(",")}
-          className="visually-hidden"
-          onChange={handleFileChange}
-          ref={inputRef}
-          type="file"
-        />
         <label className="scan-option">
           <input
             checked={automaticScan}
@@ -319,6 +320,33 @@ export function SafeUploadFlow() {
             <small>Google Cloud Vision으로 텍스트·얼굴을 확인하고, 지원되는 브라우저에서는 QR도 기기 안에서 확인합니다.</small>
           </span>
         </label>
+        {automaticScan && CAPTCHA_REQUIRED && TURNSTILE_SITE_KEY && (
+          <TurnstileWidget
+            onToken={setCaptchaToken}
+            resetKey={turnstileResetKey}
+            siteKey={TURNSTILE_SITE_KEY}
+          />
+        )}
+        {automaticScan && CAPTCHA_REQUIRED && !TURNSTILE_SITE_KEY && (
+          <p className="form-error" role="alert">자동 탐지 CAPTCHA 설정이 필요해요. 자동 탐지를 끄면 수동 편집을 사용할 수 있어요.</p>
+        )}
+        <button
+          className="upload-box"
+          disabled={automaticScan && CAPTCHA_REQUIRED && !captchaToken}
+          onClick={() => inputRef.current?.click()}
+          type="button"
+        >
+          <span className="upload-icon" aria-hidden="true">＋</span>
+          <strong>이미지 선택</strong>
+          <span>JPG, PNG, WebP · 최대 12MB</span>
+        </button>
+        <input
+          accept={ACCEPTED_TYPES.join(",")}
+          className="visually-hidden"
+          onChange={handleFileChange}
+          ref={inputRef}
+          type="file"
+        />
         {error && <p className="form-error" role="alert">{error}</p>}
         <div className="local-processing-note">
           <strong>원본을 보관하지 않아요</strong>
