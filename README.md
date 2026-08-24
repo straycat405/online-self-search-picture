@@ -35,6 +35,8 @@ npm run build
 - Google Vision 얼굴 영역 후보 탐지
 - OCR로 읽힌 한국 차량번호 패턴 분류
 - 지원 브라우저의 로컬 QR 코드 영역 탐지
+- Supabase 익명 사용자 기준 하루 5회 자동 탐지 제한
+- 공개 배포 시 Cloudflare Turnstile CAPTCHA 필수
 - 자동 후보 포함·제외 및 수동 영역 보정
 - 기존 `/search` 주소의 `/protect` 전환
 
@@ -46,6 +48,22 @@ npm run build
 2. 차량번호 전용 영역 탐지 정확도 개선
 3. 익명 사용량 제한과 CAPTCHA
 4. 탐지 정확도·사용자 선택률 측정
+
+## 공개 배포 전 필수 설정
+
+1. Supabase SQL Editor에서 `supabase/migrations/202608240004_privacy_scan_quota.sql`을 실행합니다.
+2. Cloudflare Turnstile에서 위젯을 만들고 배포 도메인을 등록합니다.
+3. 배포 환경에 다음 값을 설정합니다.
+
+```dotenv
+PRIVACY_SCAN_QUOTA_REQUIRED=true
+NEXT_PUBLIC_PRIVACY_SCAN_CAPTCHA_REQUIRED=true
+PRIVACY_SCAN_CAPTCHA_REQUIRED=true
+NEXT_PUBLIC_TURNSTILE_SITE_KEY=public_site_key
+TURNSTILE_SECRET_KEY=server_only_secret
+```
+
+프로덕션에서는 할당량 테이블이나 CAPTCHA 설정이 없으면 유료 자동 탐지를 열지 않습니다. CAPTCHA를 통과하지 못하거나 하루 5회를 사용한 경우에도 브라우저의 수동 가림 편집은 계속 사용할 수 있습니다.
 
 ## 남겨 둔 기존 자산
 
