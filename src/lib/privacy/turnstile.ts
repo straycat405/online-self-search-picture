@@ -1,6 +1,8 @@
 type TurnstileResponse = {
   success?: unknown;
   action?: unknown;
+  hostname?: unknown;
+  "error-codes"?: unknown;
 };
 
 export async function verifyTurnstileToken(
@@ -22,7 +24,15 @@ export async function verifyTurnstileToken(
     );
     if (!response.ok) return false;
     const result = (await response.json()) as TurnstileResponse;
-    return result.success === true && result.action === "privacy-scan";
+    const verified = result.success === true && result.action === "privacy-scan";
+    if (!verified) {
+      console.warn("Turnstile verification rejected", {
+        action: result.action,
+        hostname: result.hostname,
+        errorCodes: result["error-codes"],
+      });
+    }
+    return verified;
   } catch {
     return false;
   }
