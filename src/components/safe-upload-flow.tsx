@@ -8,9 +8,16 @@ import {
   isUsableRegion,
   type NormalizedRegion,
 } from "@/lib/redaction/geometry";
+import type { PrivacyScanResponse } from "@/lib/privacy/types";
 
 type ImageSize = { width: number; height: number };
 type DragState = { pointerId: number; start: { x: number; y: number } };
+type ReviewRegion = NormalizedRegion & {
+  label: string;
+  text?: string;
+  source: "automatic" | "manual";
+  selected: boolean;
+};
 
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_FILE_SIZE = 12 * 1024 * 1024;
@@ -42,14 +49,27 @@ function regionStyle(region: NormalizedRegion) {
 export function SafeUploadFlow() {
   const inputRef = useRef<HTMLInputElement>(null);
   const dragRef = useRef<DragState | null>(null);
+  const scanRequestRef = useRef(0);
   const [file, setFile] = useState<File | null>(null);
   const [imageSize, setImageSize] = useState<ImageSize | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
-  const [regions, setRegions] = useState<NormalizedRegion[]>([]);
+  const [regions, setRegions] = useState<ReviewRegion[]>([]);
   const [draftRegion, setDraftRegion] = useState<NormalizedRegion | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [automaticScan, setAutomaticScan] = useState(true);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanNotice, setScanNotice] = useState<string | null>(null);
+  const [showOtherText, setShowOtherText] = useState(false);
+
+  const selectedRegions = regions.filter((region) => region.selected);
+  const otherTextCount = regions.filter(
+    (region) => region.source === "automatic" && !region.selected,
+  ).length;
+  const visibleRegions = regions.filter(
+    (region) => region.selected || region.source === "manual" || showOtherText,
+  );
 
   useEffect(() => {
     return () => {
@@ -85,8 +105,50 @@ export function SafeUploadFlow() {
       setPreviewUrl(URL.createObjectURL(nextFile));
       setResultUrl(null);
       setRegions([]);
+      setScanNotice(null);
+      setShowOtherText(false);
+      if (automaticScan) void scanImage(nextFile, nextSize);
     } catch {
       setError("이미지를 읽지 못했어요. 다른 파일을 선택해주세요.");
+    }
+  }
+
+  async function scanImage(image: File, size: ImageSize) {
+    const requestId = ++scanRequestRef.current;
+    setIsScanning(true);
+    const formData = new FormData();
+    formData.set("image", image);
+    formData.set("width", String(size.width));
+    formData.set("height", String(size.height));
+    try {
+      const response = await fetch("/api/privacy-scan", {
+        method: "POST",
+        body: formData,
+      });
+      const data = (await response.json()) as PrivacyScanResponse | { message: string };
+      if (!response.ok || !("candidates" in data)) {
+        throw new Error("message" in data ? data.message : "자동 탐지에 실패했어요.");
+      }
+      if (requestId !== scanRequestRef.current) return;
+      const automaticRegions: ReviewRegion[] = data.candidates.map((candidate) => ({
+        ...candidate.region,
+        label: candidate.label,
+        text: candidate.text,
+        source: "automatic",
+        selected: candidate.suggested,
+      }));
+      setRegions(automaticRegions);
+      const suggestedCount = automaticRegions.filter((region) => region.selected).length;
+      setScanNotice(
+        automaticRegions.length
+          ? `텍스트 ${automaticRegions.length}개를 찾았고, 민감 정보 후보 ${suggestedCount}개를 먼저 선택했어요.`
+          : "자동으로 찾은 텍스트가 없어요. 필요한 영역을 직접 드래그해주세요.",
+      );
+    } catch (caught) {
+      if (requestId !== scanRequestRef.current) return;
+      setScanNotice(caught instanceof Error ? caught.message : "자동 탐지에 실패했어요. 수동 선택은 계속 사용할 수 있어요.");
+    } finally {
+      if (requestId === scanRequestRef.current) setIsScanning(false);
     }
   }
 
@@ -112,13 +174,20 @@ export function SafeUploadFlow() {
       drag.start,
       pointFromEvent(event),
     );
-    if (isUsableRegion(region)) setRegions((current) => [...current, region]);
+    if (isUsableRegion(region)) {
+      setRegions((current) => [...current, {
+        ...region,
+        label: "직접 선택",
+        source: "manual",
+        selected: true,
+      }]);
+    }
     dragRef.current = null;
     setDraftRegion(null);
   }
 
   async function createSafeCopy() {
-    if (!file || !imageSize || regions.length === 0) return;
+    if (!file || !imageSize || selectedRegions.length === 0) return;
     setIsExporting(true);
     setError(null);
     try {
@@ -131,7 +200,7 @@ export function SafeUploadFlow() {
       context.drawImage(bitmap, 0, 0);
       bitmap.close();
       context.fillStyle = "#111318";
-      for (const region of regions) {
+      for (const region of selectedRegions) {
         context.fillRect(
           Math.round(region.x * canvas.width),
           Math.round(region.y * canvas.height),
@@ -153,6 +222,7 @@ export function SafeUploadFlow() {
   }
 
   function reset() {
+    scanRequestRef.current += 1;
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     if (resultUrl) URL.revokeObjectURL(resultUrl);
     setFile(null);
@@ -161,6 +231,9 @@ export function SafeUploadFlow() {
     setResultUrl(null);
     setRegions([]);
     setError(null);
+    setScanNotice(null);
+    setIsScanning(false);
+    setShowOtherText(false);
     if (inputRef.current) inputRef.current.value = "";
   }
 
@@ -184,10 +257,21 @@ export function SafeUploadFlow() {
           ref={inputRef}
           type="file"
         />
+        <label className="scan-option">
+          <input
+            checked={automaticScan}
+            onChange={(event) => setAutomaticScan(event.target.checked)}
+            type="checkbox"
+          />
+          <span>
+            <strong>자동 텍스트 탐지 사용</strong>
+            <small>이미지를 저장하지 않고 Google Cloud Vision으로 텍스트 영역을 확인합니다.</small>
+          </span>
+        </label>
         {error && <p className="form-error" role="alert">{error}</p>}
         <div className="local-processing-note">
-          <strong>현재 편집은 브라우저 안에서만 처리돼요</strong>
-          <p>선택한 원본 이미지를 서버에 업로드하지 않으며, 다운로드한 안전 사본은 메타데이터가 제거된 PNG로 만들어집니다.</p>
+          <strong>원본을 보관하지 않아요</strong>
+          <p>자동 탐지를 켜면 이미지는 텍스트 분석을 위해 Google Cloud Vision에 한 번 전달되지만 서버나 데이터베이스에 저장하지 않습니다. 끄면 모든 편집이 브라우저 안에서만 처리됩니다.</p>
         </div>
       </section>
     );
@@ -220,9 +304,9 @@ export function SafeUploadFlow() {
             src={resultUrl ?? previewUrl}
             unoptimized
           />
-          {!resultUrl && regions.map((region, index) => (
-            <span className="redaction-region" key={region.id} style={regionStyle(region)}>
-              <span>{index + 1}</span>
+          {!resultUrl && visibleRegions.map((region) => (
+            <span className={`redaction-region ${region.selected ? "" : "is-excluded"}`} key={region.id} style={regionStyle(region)}>
+              <span>{regions.findIndex((item) => item.id === region.id) + 1}</span>
             </span>
           ))}
           {!resultUrl && draftRegion && (
@@ -234,7 +318,7 @@ export function SafeUploadFlow() {
           {resultUrl ? (
             <>
               <div className="completion-mark" aria-hidden="true">✓</div>
-              <h2>{regions.length}개 영역을 가렸어요</h2>
+              <h2>{selectedRegions.length}개 영역을 가렸어요</h2>
               <p>다운로드한 파일을 열어 민감한 내용이 충분히 가려졌는지 마지막으로 확인해주세요.</p>
               <a className="button button-primary button-full" download={`safe-${file.name.replace(/\.[^.]+$/, "")}.png`} href={resultUrl}>
                 안전한 사본 다운로드
@@ -245,21 +329,36 @@ export function SafeUploadFlow() {
             </>
           ) : (
             <>
-              <span className="stage-label">선택한 영역 {regions.length}개</span>
+              <span className="stage-label">
+                {isScanning ? "텍스트를 찾는 중…" : `가릴 영역 ${selectedRegions.length}개`}
+              </span>
               <h2>가릴 정보가 모두 포함됐나요?</h2>
-              <p>자동 탐지는 다음 단계에서 연결됩니다. 지금은 이미지 위를 직접 드래그해 영역을 추가해주세요.</p>
+              <p>{scanNotice ?? "자동으로 찾은 후보를 검토하거나 이미지 위를 직접 드래그해 영역을 추가해주세요."}</p>
               <ol className="region-list">
-                {regions.map((region, index) => (
-                  <li key={region.id}>
-                    <span>영역 {index + 1}</span>
-                    <button onClick={() => setRegions((current) => current.filter((item) => item.id !== region.id))} type="button">삭제</button>
+                {visibleRegions.map((region) => (
+                  <li className={region.selected ? "is-selected" : ""} key={region.id}>
+                    <span>
+                      <strong>{regions.findIndex((item) => item.id === region.id) + 1}. {region.label}</strong>
+                      {region.text && <small>{region.text}</small>}
+                    </span>
+                    <button
+                      onClick={() => setRegions((current) => current.map((item) => item.id === region.id ? { ...item, selected: !item.selected } : item))}
+                      type="button"
+                    >
+                      {region.selected ? "제외" : "포함"}
+                    </button>
                   </li>
                 ))}
               </ol>
+              {otherTextCount > 0 && (
+                <button className="show-other-text" onClick={() => setShowOtherText((current) => !current)} type="button">
+                  {showOtherText ? "일반 텍스트 접기" : `다른 텍스트 ${otherTextCount}개 검토하기`}
+                </button>
+              )}
               {regions.length > 0 && (
                 <button className="clear-regions" onClick={() => setRegions([])} type="button">모두 지우기</button>
               )}
-              <button className="button button-primary button-full" disabled={regions.length === 0 || isExporting} onClick={() => void createSafeCopy()} type="button">
+              <button className="button button-primary button-full" disabled={selectedRegions.length === 0 || isExporting} onClick={() => void createSafeCopy()} type="button">
                 {isExporting ? "사본 만드는 중…" : "안전한 사본 만들기"}
               </button>
             </>
