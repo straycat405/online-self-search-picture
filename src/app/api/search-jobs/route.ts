@@ -25,14 +25,19 @@ export async function POST(request: Request) {
 
   if (isSupabaseBrowserConfigured()) {
     const supabase = await createSupabaseServerClient();
-    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims();
-    const userId = claimsData?.claims?.sub;
+    const { data: claimsData } = await supabase.auth.getClaims();
+    let userId = claimsData?.claims?.sub;
 
-    if (claimsError || !userId) {
-      return NextResponse.json(
-        { message: "익명 검색 세션을 확인하지 못했어요." },
-        { status: 401 },
-      );
+    if (!userId) {
+      const { data: anonymousData, error: signInError } =
+        await supabase.auth.signInAnonymously();
+      if (signInError || !anonymousData.user) {
+        return NextResponse.json(
+          { message: "익명 검색 세션을 만들지 못했어요." },
+          { status: 401 },
+        );
+      }
+      userId = anonymousData.user.id;
     }
 
     const jobId = crypto.randomUUID();

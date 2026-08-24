@@ -89,23 +89,6 @@ export function PhotoSearchFlow() {
     let photoObjectPath: string | undefined;
 
     try {
-      let supabaseUserId: string | undefined;
-      if (isSupabaseBrowserConfigured()) {
-        const supabase = createSupabaseBrowserClient();
-        const { data: userData } = await supabase.auth.getUser();
-        let user = userData.user;
-
-        if (!user) {
-          const { data: anonymousData, error: signInError } =
-            await supabase.auth.signInAnonymously();
-          if (signInError || !anonymousData.user) {
-            throw new Error("익명 검색 세션을 만들지 못했어요.");
-          }
-          user = anonymousData.user;
-        }
-        supabaseUserId = user.id;
-      }
-
       const result = await fetch("/api/search-jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -128,16 +111,17 @@ export function PhotoSearchFlow() {
 
       let completedResponse: SearchResponse;
       if (data.mode === "supabase-pending") {
-        if (!supabaseUserId) {
+        const supabase = createSupabaseBrowserClient();
+        const { data: userData, error: userError } = await supabase.auth.getUser();
+        if (userError || !userData.user) {
           throw new Error("익명 검색 세션을 확인하지 못했어요.");
         }
         requestedJobId = data.jobId;
         photoObjectPath = data.photoObjectPath;
-        if (!photoObjectPath.startsWith(`${supabaseUserId}/${requestedJobId}/`)) {
+        if (!photoObjectPath.startsWith(`${userData.user.id}/${requestedJobId}/`)) {
           throw new Error("검색 사진 경로를 확인하지 못했어요.");
         }
 
-        const supabase = createSupabaseBrowserClient();
         const { error: uploadError } = await supabase.storage
           .from("search-photos")
           .upload(photoObjectPath, file, { contentType: file.type, upsert: false });
