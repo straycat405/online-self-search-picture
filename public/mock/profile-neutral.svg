@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 640" role="img" aria-label="중립적인 배경의 인물 목업">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e6e7e8"/>
+      <stop offset="1" stop-color="#c9cdcf"/>
+    </linearGradient>
+    <linearGradient id="shirt" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#596066"/>
+      <stop offset="1" stop-color="#353a3e"/>
+    </linearGradient>
+  </defs>
+  <rect width="520" height="640" fill="url(#bg)"/>
+  <rect x="54" y="57" width="412" height="526" rx="206" fill="#ffffff" opacity=".18"/>
+  <path d="M91 640c10-128 68-198 169-198 103 0 162 70 171 198" fill="url(#shirt)"/>
+  <ellipse cx="260" cy="298" rx="109" ry="141" fill="#dcb394"/>
+  <path d="M151 280c-3-111 45-165 110-165 76 0 124 59 112 174-23-46-61-73-110-87-28 39-65 64-112 78Z" fill="#262829"/>
+  <circle cx="220" cy="303" r="8" fill="#302b28"/>
+  <circle cx="301" cy="303" r="8" fill="#302b28"/>
+  <path d="M231 361c18 10 40 10 59 0" fill="none" stroke="#986059" stroke-linecap="round" stroke-width="7"/>
+</svg>
