@@ -263,7 +263,7 @@ export function PhotoSearchFlow() {
       <section className="flow-shell results-shell">
         <div className="demo-banner">
           {response.mode === "supabase-live"
-            ? "Google 공개 웹의 동일·부분 일치 이미지 검색 결과입니다"
+            ? "Google 공개 웹에서 찾은 이미지 일치 후보입니다"
             : response.mode === "supabase-mock"
               ? "비공개 저장 흐름을 사용한 데모 결과입니다"
               : "기능 확인용 데모 결과입니다"}
@@ -271,14 +271,17 @@ export function PhotoSearchFlow() {
         <div className="result-summary">
           <p className="eyebrow">검색 완료</p>
           <h1>
-            {response.candidates.length
-              ? `유력한 일치 결과가 ${response.candidates.length}건 있어요`
-              : "유력한 일치 결과를 찾지 못했어요"}
+            {resultCounts.exact
+              ? `동일 이미지 후보를 ${resultCounts.exact}건 찾았어요`
+              : resultCounts.partial
+                ? `확인해 볼 부분 일치 후보가 ${resultCounts.partial}건 있어요`
+                : "공개 웹에서 일치 후보를 찾지 못했어요"}
           </h1>
           {response.candidates.length ? (
             <p>
-              동일 이미지 {resultCounts.exact}건과 크롭·부분 일치 이미지{" "}
-              {resultCounts.partial}건을 찾았어요.
+              동일 이미지 후보 {resultCounts.exact}건과 부분 일치 후보{" "}
+              {resultCounts.partial}건을 찾았어요. 부분 일치는 다른 이미지일 수 있으니
+              원문에서 직접 확인해주세요.
             </p>
           ) : (
             <p>현재 확인 가능한 공개 웹 범위에서는 동일하거나 편집된 사진이 발견되지 않았어요.</p>
@@ -436,16 +439,16 @@ function CandidateCard({
 }) {
   const label =
     candidate.matchType === "exact"
-      ? "동일 이미지"
+      ? "동일 이미지 후보"
       : candidate.matchType === "partial"
-        ? "크롭·부분 일치"
+        ? "부분 일치 후보"
         : "확인해 볼 후보";
 
   return (
     <article className="candidate-card">
       <div className="candidate-photo">
         <Image
-          alt={`${candidate.title} 데모 이미지`}
+          alt=""
           fill
           sizes="(max-width: 720px) 36vw, 210px"
           src={candidate.thumbnailUrl}
@@ -464,7 +467,7 @@ function CandidateCard({
             onClick={() => onVerdict("self")}
             type="button"
           >
-            내 사진이 맞아요
+            내 사진이 포함돼요
           </button>
           <button
             className={verdict === "not_self" ? "is-selected" : ""}
