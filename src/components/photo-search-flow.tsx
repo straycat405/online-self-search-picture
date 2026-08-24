@@ -3,7 +3,13 @@
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
-import type { SearchCandidate, SearchResponse } from "@/lib/search/types";
+import type {
+  SearchCandidate,
+  SearchJobCreatedResponse,
+  SearchResponse,
+} from "@/lib/search/types";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { isSupabaseBrowserConfigured } from "@/lib/supabase/env";
 
 type FlowState = "upload" | "searching" | "results";
 type Verdict = "self" | "not_self";
@@ -28,6 +34,7 @@ export function PhotoSearchFlow() {
   const [progressIndex, setProgressIndex] = useState(0);
   const [response, setResponse] = useState<SearchResponse | null>(null);
   const [verdicts, setVerdicts] = useState<Record<string, Verdict>>({});
+  const [uploadedPhotoPath, setUploadedPhotoPath] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -78,7 +85,27 @@ export function PhotoSearchFlow() {
       );
     }, 650);
 
+    let requestedJobId: string | undefined;
+    let photoObjectPath: string | undefined;
+
     try {
+      let supabaseUserId: string | undefined;
+      if (isSupabaseBrowserConfigured()) {
+        const supabase = createSupabaseBrowserClient();
+        const { data: userData } = await supabase.auth.getUser();
+        let user = userData.user;
+
+        if (!user) {
+          const { data: anonymousData, error: signInError } =
+            await supabase.auth.signInAnonymously();
+          if (signInError || !anonymousData.user) {
+            throw new Error("익명 검색 세션을 만들지 못했어요.");
+          }
+          user = anonymousData.user;
+        }
+        supabaseUserId = user.id;
+      }
+
       const result = await fetch("/api/search-jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -91,23 +118,102 @@ export function PhotoSearchFlow() {
         }),
       });
 
-      const data = (await result.json()) as SearchResponse | { message: string };
-      if (!result.ok || !("candidates" in data)) {
+      const data = (await result.json()) as
+        | SearchResponse
+        | SearchJobCreatedResponse
+        | { message: string };
+      if (!result.ok || "message" in data) {
         throw new Error("message" in data ? data.message : "검색을 시작하지 못했어요.");
       }
 
+      let completedResponse: SearchResponse;
+      if (data.mode === "supabase-pending") {
+        if (!supabaseUserId) {
+          throw new Error("익명 검색 세션을 확인하지 못했어요.");
+        }
+        requestedJobId = data.jobId;
+        photoObjectPath = data.photoObjectPath;
+        if (!photoObjectPath.startsWith(`${supabaseUserId}/${requestedJobId}/`)) {
+          throw new Error("검색 사진 경로를 확인하지 못했어요.");
+        }
+
+        const supabase = createSupabaseBrowserClient();
+        const { error: uploadError } = await supabase.storage
+          .from("search-photos")
+          .upload(photoObjectPath, file, { contentType: file.type, upsert: false });
+        if (uploadError) {
+          throw new Error("검색 사진을 안전하게 업로드하지 못했어요.");
+        }
+        setUploadedPhotoPath(photoObjectPath);
+
+        const startResult = await fetch(`/api/search-jobs/${requestedJobId}/start`, {
+          method: "POST",
+        });
+        const startData = (await startResult.json()) as SearchResponse | { message: string };
+        if (!startResult.ok || !("candidates" in startData)) {
+          throw new Error(
+            "message" in startData ? startData.message : "검색을 시작하지 못했어요.",
+          );
+        }
+        completedResponse = startData;
+      } else {
+        completedResponse = data;
+      }
+
       await new Promise((resolve) => setTimeout(resolve, 1200));
-      setResponse(data);
+      setResponse(completedResponse);
       setFlowState("results");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "잠시 후 다시 시도해주세요.");
+      let cleanupFailed = false;
+      if (photoObjectPath && isSupabaseBrowserConfigured()) {
+        const { error: removeError } = await createSupabaseBrowserClient()
+          .storage.from("search-photos")
+          .remove([photoObjectPath]);
+        cleanupFailed = Boolean(removeError);
+        if (!removeError) setUploadedPhotoPath(null);
+      }
+      if (requestedJobId && isSupabaseBrowserConfigured() && !cleanupFailed) {
+        const { error: deleteError } = await createSupabaseBrowserClient()
+          .from("search_jobs")
+          .delete()
+          .eq("id", requestedJobId);
+        cleanupFailed = Boolean(deleteError);
+      }
+      setError(
+        cleanupFailed
+          ? "검색을 중단했지만 사진 정리를 완료하지 못했어요. 잠시 후 다시 시도해주세요."
+          : caught instanceof Error
+            ? caught.message
+            : "잠시 후 다시 시도해주세요.",
+      );
       setFlowState("upload");
     } finally {
       window.clearInterval(timer);
     }
   }
 
-  function resetSearch() {
+  async function resetSearch() {
+    if (response?.mode === "supabase-mock" && isSupabaseBrowserConfigured()) {
+      const supabase = createSupabaseBrowserClient();
+      if (uploadedPhotoPath) {
+        const { error: removeError } = await supabase.storage
+          .from("search-photos")
+          .remove([uploadedPhotoPath]);
+        if (removeError) {
+          setError("사진을 삭제하지 못했어요. 잠시 후 다시 시도해주세요.");
+          return;
+        }
+      }
+      const { error: deleteError } = await supabase
+        .from("search_jobs")
+        .delete()
+        .eq("id", response.jobId);
+      if (deleteError) {
+        setError("검색 기록을 삭제하지 못했어요. 잠시 후 다시 시도해주세요.");
+        return;
+      }
+    }
+
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setFile(null);
     setPreviewUrl(null);
@@ -116,6 +222,7 @@ export function PhotoSearchFlow() {
     setAdultConfirmed(false);
     setSelfConfirmed(false);
     setError(null);
+    setUploadedPhotoPath(null);
     setFlowState("upload");
     if (inputRef.current) inputRef.current.value = "";
   }
@@ -148,7 +255,11 @@ export function PhotoSearchFlow() {
   if (flowState === "results" && response) {
     return (
       <section className="flow-shell results-shell">
-        <div className="demo-banner">기능 확인용 데모 결과입니다</div>
+        <div className="demo-banner">
+          {response.mode === "supabase-mock"
+            ? "비공개 저장 흐름을 사용한 데모 결과입니다"
+            : "기능 확인용 데모 결과입니다"}
+        </div>
         <div className="result-summary">
           <p className="eyebrow">검색 완료</p>
           <h1>확인해 볼 후보가 {response.candidates.length}건 있어요</h1>
@@ -188,14 +299,27 @@ export function PhotoSearchFlow() {
           <div>
             <span className="delete-icon" aria-hidden="true">✓</span>
             <div>
-              <h2>등록 사진은 서버에 전송하지 않았어요</h2>
-              <p>현재 데모에서는 브라우저 안에서 미리보기 용도로만 사용했습니다.</p>
+              <h2>
+                {response.mode === "supabase-mock"
+                  ? "등록 사진은 비공개 공간에 저장했어요"
+                  : "등록 사진은 서버에 전송하지 않았어요"}
+              </h2>
+              <p>
+                {response.mode === "supabase-mock"
+                  ? "검색 사진은 사용자별 비공개 경로에 저장되며 1시간 후 삭제 대상이 됩니다."
+                  : "현재 데모에서는 브라우저 안에서 미리보기 용도로만 사용했습니다."}
+              </p>
             </div>
           </div>
-          <button className="button button-secondary" onClick={resetSearch} type="button">
+          <button
+            className="button button-secondary"
+            onClick={() => void resetSearch()}
+            type="button"
+          >
             결과 지우고 다시 검색
           </button>
         </div>
+        {error && <p className="form-error" role="alert">{error}</p>}
       </section>
     );
   }
@@ -272,7 +396,11 @@ export function PhotoSearchFlow() {
       >
         무료 데모 검색 시작
       </button>
-      <p className="privacy-note">현재 데모에서는 선택한 사진이 서버로 전송되지 않습니다.</p>
+      <p className="privacy-note">
+        {isSupabaseBrowserConfigured()
+          ? "사진은 비공개 저장소에 업로드되며 1시간 후 삭제 대상이 됩니다."
+          : "현재 데모에서는 선택한 사진이 서버로 전송되지 않습니다."}
+      </p>
     </section>
   );
 }

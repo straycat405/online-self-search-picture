@@ -21,10 +21,16 @@ export type SearchInput = {
 
 export type SearchResponse = {
   jobId: string;
-  mode: "mock";
+  mode: "mock" | "supabase-mock";
   candidates: SearchCandidate[];
   searchedSources: string[];
   completedAt: string;
+};
+
+export type SearchJobCreatedResponse = {
+  jobId: string;
+  mode: "supabase-pending";
+  photoObjectPath: string;
 };
 
 export interface SearchProvider {
