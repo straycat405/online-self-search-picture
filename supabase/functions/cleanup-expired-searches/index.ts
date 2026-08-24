@@ -1,4 +1,5 @@
-import { createSupabaseContext } from "npm:@supabase/server@^1";
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { withSupabase } from "jsr:@supabase/server@^1";
 
 type CleanupJob = {
   job_id: string;
@@ -9,7 +10,8 @@ type CleanupJob = {
 
 const jsonHeaders = { "content-type": "application/json; charset=utf-8" };
 
-Deno.serve(async (request) => {
+export default {
+  fetch: withSupabase({ auth: "none" }, async (request, context) => {
   if (request.method !== "POST") {
     return Response.json({ message: "Method not allowed" }, { status: 405, headers: jsonHeaders });
   }
@@ -18,16 +20,6 @@ Deno.serve(async (request) => {
   const suppliedSecret = request.headers.get("x-cleanup-secret");
   if (!expectedSecret || !suppliedSecret || suppliedSecret !== expectedSecret) {
     return Response.json({ message: "Unauthorized" }, { status: 401, headers: jsonHeaders });
-  }
-
-  const { data: context, error: contextError } = await createSupabaseContext(request, {
-    auth: "none",
-  });
-  if (contextError) {
-    return Response.json(
-      { message: "Admin context unavailable" },
-      { status: 500, headers: jsonHeaders },
-    );
   }
 
   const workerId = crypto.randomUUID();
@@ -122,4 +114,5 @@ Deno.serve(async (request) => {
   }
 
   return Response.json(summary, { headers: jsonHeaders });
-});
+  }),
+};
