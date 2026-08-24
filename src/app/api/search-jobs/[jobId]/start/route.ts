@@ -34,6 +34,13 @@ export async function POST(
     );
   }
 
+  if (typeof job.photo_object_path !== "string") {
+    return NextResponse.json(
+      { message: "검색 사진이 이미 삭제됐어요." },
+      { status: 409 },
+    );
+  }
+
   const pathParts = job.photo_object_path.split("/");
   const fileName = pathParts.at(-1);
   const folder = pathParts.slice(0, -1).join("/");
@@ -65,10 +72,9 @@ export async function POST(
       mimeType: job.mime_type,
     });
   } catch {
-    await supabase.rpc("finish_search_job", {
+    await supabase.rpc("fail_search_job", {
       requested_job_id: jobId,
-      outcome: "failed",
-      outcome_error_code: "provider_failed",
+      failure_code: "provider_failed",
     });
     return NextResponse.json(
       { message: "검색 공급자 연결에 실패했어요." },
@@ -79,46 +85,32 @@ export async function POST(
     (candidate) => ({ ...candidate, id: crypto.randomUUID() }),
   );
   const completedAt = new Date().toISOString();
-  const candidateResult = candidates.length
-    ? await supabase.from("search_candidates").insert(
-        candidates.map((candidate) => ({
-          id: candidate.id,
-          search_job_id: jobId,
-          provider: provider.name,
-          match_type: candidate.matchType,
-          tier: candidate.tier,
-          source_url: candidate.sourceUrl,
-          source_domain: candidate.sourceDomain,
-          thumbnail_url: candidate.thumbnailUrl,
-          title: candidate.title,
-          found_at: candidate.foundAt,
-        })),
-      )
-    : { error: null };
-
-  if (candidateResult.error) {
-    await supabase.rpc("finish_search_job", {
-      requested_job_id: jobId,
-      outcome: "failed",
-      outcome_error_code: "candidate_insert_failed",
-    });
-    return NextResponse.json(
-      { message: "검색 결과를 저장하지 못했어요." },
-      { status: 500 },
-    );
-  }
-
-  const { data: completedJob, error: completeError } = await supabase.rpc(
-    "finish_search_job",
+  const { data: savedResults, error: candidateError } = await supabase.rpc(
+    "save_search_results",
     {
       requested_job_id: jobId,
-      outcome: "complete",
+      candidate_payload: candidates.map((candidate) => ({
+        id: candidate.id,
+        provider: provider.name,
+        match_type: candidate.matchType,
+        tier: candidate.tier,
+        source_url: candidate.sourceUrl,
+        source_domain: candidate.sourceDomain,
+        thumbnail_url: candidate.thumbnailUrl,
+        title: candidate.title,
+        found_at: candidate.foundAt,
+      })),
       outcome_completed_at: completedAt,
     },
   );
-  if (completeError || !completedJob) {
+
+  if (candidateError || !savedResults) {
+    await supabase.rpc("fail_search_job", {
+      requested_job_id: jobId,
+      failure_code: "candidate_insert_failed",
+    });
     return NextResponse.json(
-      { message: "검색 완료 상태를 저장하지 못했어요." },
+      { message: "검색 결과를 저장하지 못했어요." },
       { status: 500 },
     );
   }

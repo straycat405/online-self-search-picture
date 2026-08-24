@@ -24,3 +24,27 @@ the Storage API before a production launch.
 The hardening migration limits each anonymous account to five jobs per hour and
 only allows an upload when its job row already exists. Enable CAPTCHA before a
 public launch; per-account quotas alone do not prevent repeated anonymous signups.
+
+## Automated cleanup
+
+Migration `202608240003_automated_cleanup_foundation.sql` makes TTL values
+server-owned, prevents clients from deleting a job before its Storage object,
+and adds leased cleanup RPCs. The `cleanup-expired-searches` Edge Function then:
+
+- removes query photos through the Storage API after one hour;
+- retries partial failures on the next scheduled run;
+- deletes job/result rows after seven days only after photo removal is confirmed.
+
+Deployment requires three manual hosted-project steps:
+
+1. Apply migration `003` in SQL Editor.
+2. Deploy `functions/cleanup-expired-searches` with JWT verification disabled and
+   set a random `CLEANUP_CRON_SECRET` in Edge Function secrets.
+3. Fill in and run `setup/schedule_cleanup.sql.example`, using the same random
+   secret. Copy it to a `*.local.sql` file before filling values; these files are
+   gitignored and must never be committed.
+
+The recommended schedule is every five minutes. This is best-effort on the Free
+plan: a paused project catches up after resume, so it is not a strict deletion SLA.
+Do not manually delete anonymous Auth users until the orphan-photo sweep has been
+deployed and verified; deleting an Auth user cascades its job rows first.

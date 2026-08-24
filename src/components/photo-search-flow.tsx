@@ -35,6 +35,7 @@ export function PhotoSearchFlow() {
   const [response, setResponse] = useState<SearchResponse | null>(null);
   const [verdicts, setVerdicts] = useState<Record<string, Verdict>>({});
   const [uploadedPhotoPath, setUploadedPhotoPath] = useState<string | null>(null);
+  const [photoDeletedAfterSearch, setPhotoDeletedAfterSearch] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -140,6 +141,22 @@ export function PhotoSearchFlow() {
           );
         }
         completedResponse = startData;
+
+        const { error: removeAfterSearchError } = await supabase.storage
+          .from("search-photos")
+          .remove([photoObjectPath]);
+        if (!removeAfterSearchError) {
+          const { data: photoMarked, error: markError } = await supabase.rpc(
+            "mark_search_photo_deleted",
+            {
+            requested_job_id: requestedJobId,
+            },
+          );
+          if (!markError && photoMarked) {
+            setUploadedPhotoPath(null);
+          }
+          setPhotoDeletedAfterSearch(true);
+        }
       } else {
         completedResponse = data;
       }
@@ -157,11 +174,11 @@ export function PhotoSearchFlow() {
         if (!removeError) setUploadedPhotoPath(null);
       }
       if (requestedJobId && isSupabaseBrowserConfigured() && !cleanupFailed) {
-        const { error: deleteError } = await createSupabaseBrowserClient()
-          .from("search_jobs")
-          .delete()
-          .eq("id", requestedJobId);
-        cleanupFailed = Boolean(deleteError);
+        const { data: deleted, error: deleteError } = await createSupabaseBrowserClient().rpc(
+          "delete_search_job_if_photo_missing",
+          { requested_job_id: requestedJobId },
+        );
+        cleanupFailed = Boolean(deleteError || !deleted);
       }
       setError(
         cleanupFailed
@@ -188,11 +205,11 @@ export function PhotoSearchFlow() {
           return;
         }
       }
-      const { error: deleteError } = await supabase
-        .from("search_jobs")
-        .delete()
-        .eq("id", response.jobId);
-      if (deleteError) {
+      const { data: deleted, error: deleteError } = await supabase.rpc(
+        "delete_search_job_if_photo_missing",
+        { requested_job_id: response.jobId },
+      );
+      if (deleteError || !deleted) {
         setError("검색 기록을 삭제하지 못했어요. 잠시 후 다시 시도해주세요.");
         return;
       }
@@ -207,6 +224,7 @@ export function PhotoSearchFlow() {
     setSelfConfirmed(false);
     setError(null);
     setUploadedPhotoPath(null);
+    setPhotoDeletedAfterSearch(false);
     setFlowState("upload");
     if (inputRef.current) inputRef.current.value = "";
   }
@@ -284,13 +302,17 @@ export function PhotoSearchFlow() {
             <span className="delete-icon" aria-hidden="true">✓</span>
             <div>
               <h2>
-                {response.mode === "supabase-mock"
-                  ? "등록 사진은 비공개 공간에 저장했어요"
+                {response.mode === "supabase-mock" && photoDeletedAfterSearch
+                  ? "검색이 끝나 등록 사진을 삭제했어요"
+                  : response.mode === "supabase-mock"
+                    ? "등록 사진은 비공개 공간에 저장했어요"
                   : "등록 사진은 서버에 전송하지 않았어요"}
               </h2>
               <p>
-                {response.mode === "supabase-mock"
-                  ? "검색 사진은 사용자별 비공개 경로에 저장되며 1시간 후 삭제 대상이 됩니다."
+                {response.mode === "supabase-mock" && photoDeletedAfterSearch
+                  ? "검색 결과만 남기고 원본 검색 사진은 즉시 정리했습니다."
+                  : response.mode === "supabase-mock"
+                    ? "처리가 중단된 사진은 업로드 후 1시간이 지나면 자동 삭제를 재시도합니다."
                   : "현재 데모에서는 브라우저 안에서 미리보기 용도로만 사용했습니다."}
               </p>
             </div>
@@ -382,7 +404,7 @@ export function PhotoSearchFlow() {
       </button>
       <p className="privacy-note">
         {isSupabaseBrowserConfigured()
-          ? "사진은 비공개 저장소에 업로드되며 1시간 후 삭제 대상이 됩니다."
+          ? "사진은 검색 직후 삭제하며, 중단된 경우에도 1시간 후 자동 정리를 재시도합니다."
           : "현재 데모에서는 선택한 사진이 서버로 전송되지 않습니다."}
       </p>
     </section>

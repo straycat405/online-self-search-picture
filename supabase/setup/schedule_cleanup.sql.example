@@ -1,0 +1,59 @@
+-- Replace all three CHANGE_ME values before running this file in SQL Editor.
+-- CLEANUP_CRON_SECRET must also be set as an Edge Function secret with the same value.
+
+create extension if not exists pg_cron with schema pg_catalog;
+create extension if not exists pg_net with schema extensions;
+create extension if not exists supabase_vault with schema vault;
+
+select vault.create_secret(
+  'https://CHANGE_ME.supabase.co',
+  'cleanup_project_url',
+  'Project URL used by the cleanup cron job'
+)
+where not exists (
+  select 1 from vault.decrypted_secrets where name = 'cleanup_project_url'
+);
+select vault.create_secret(
+  'CHANGE_ME_PUBLISHABLE_KEY',
+  'cleanup_publishable_key',
+  'Publishable API key used by the cleanup cron job'
+)
+where not exists (
+  select 1 from vault.decrypted_secrets where name = 'cleanup_publishable_key'
+);
+select vault.create_secret(
+  'CHANGE_ME_RANDOM_SECRET',
+  'cleanup_invocation_secret',
+  'Private header shared only by Cron and the cleanup Edge Function'
+)
+where not exists (
+  select 1 from vault.decrypted_secrets where name = 'cleanup_invocation_secret'
+);
+
+select cron.schedule(
+  'cleanup-expired-searches-every-five-minutes',
+  '*/5 * * * *',
+  $$
+  select net.http_post(
+    url := (
+      select decrypted_secret
+      from vault.decrypted_secrets
+      where name = 'cleanup_project_url'
+    ) || '/functions/v1/cleanup-expired-searches',
+    headers := jsonb_build_object(
+      'content-type', 'application/json',
+      'apikey', (
+        select decrypted_secret
+        from vault.decrypted_secrets
+        where name = 'cleanup_publishable_key'
+      ),
+      'x-cleanup-secret', (
+        select decrypted_secret
+        from vault.decrypted_secrets
+        where name = 'cleanup_invocation_secret'
+      )
+    ),
+    body := jsonb_build_object('scheduled_at', now())
+  );
+  $$
+);

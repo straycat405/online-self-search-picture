@@ -19,6 +19,7 @@ test-results/
 
 # local and temporary files
 tmp/
+supabase/setup/*.local.sql
 *.log
 .DS_Store
 Thumbs.db

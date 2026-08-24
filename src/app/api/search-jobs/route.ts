@@ -13,6 +13,11 @@ const requestSchema = z.object({
   selfConfirmed: z.literal(true),
 });
 
+const createdJobSchema = z.object({
+  job_id: z.string().uuid(),
+  photo_path: z.string().min(1),
+});
+
 export async function POST(request: Request) {
   const parsed = requestSchema.safeParse(await request.json());
 
@@ -40,27 +45,15 @@ export async function POST(request: Request) {
       userId = anonymousData.user.id;
     }
 
-    const jobId = crypto.randomUUID();
-    const extension =
-      parsed.data.mimeType === "image/png"
-        ? "png"
-        : parsed.data.mimeType === "image/webp"
-          ? "webp"
-          : "jpg";
-    const photoObjectPath = `${userId}/${jobId}/query.${extension}`;
+    const { data: job, error: jobError } = await supabase
+      .rpc("create_search_job", {
+        job_mime_type: parsed.data.mimeType,
+        job_file_size: parsed.data.fileSize,
+      })
+      .single();
 
-    const { error: jobError } = await supabase.from("search_jobs").insert({
-      id: jobId,
-      user_id: userId,
-      status: "created",
-      mode: "mock",
-      mime_type: parsed.data.mimeType,
-      file_size: parsed.data.fileSize,
-      photo_object_path: photoObjectPath,
-      provider_plan: "mock",
-    });
-
-    if (jobError) {
+    const parsedJob = createdJobSchema.safeParse(job);
+    if (jobError || !parsedJob.success) {
       return NextResponse.json(
         { message: "검색 작업을 저장하지 못했어요." },
         { status: 500 },
@@ -68,9 +61,9 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({
-      jobId,
+      jobId: parsedJob.data.job_id,
       mode: "supabase-pending",
-      photoObjectPath,
+      photoObjectPath: parsedJob.data.photo_path,
     });
   }
 
