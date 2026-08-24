@@ -1,6 +1,14 @@
 import type { NormalizedRegion } from "@/lib/redaction/geometry";
 
-export type PrivacyCandidateKind = "email" | "phone" | "url" | "account" | "text";
+export type PrivacyCandidateKind =
+  | "email"
+  | "phone"
+  | "url"
+  | "account"
+  | "address"
+  | "identifier"
+  | "secret"
+  | "text";
 
 export type PrivacyCandidate = {
   id: string;

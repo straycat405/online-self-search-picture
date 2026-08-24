@@ -11,6 +11,9 @@ describe("classifyDetectedText", () => {
     expect(classifyDetectedText("010-1234-5678")).toBe("phone");
     expect(classifyDetectedText("www.example.com/account")).toBe("url");
     expect(classifyDetectedText("@private_user")).toBe("account");
+    expect(classifyDetectedText("서울특별시마포구월드컵북로12")).toBe("address");
+    expect(classifyDetectedText("900101-1234567")).toBe("identifier");
+    expect(classifyDetectedText("API_KEY=abcd-1234-secret")).toBe("secret");
     expect(classifyDetectedText("일반문장")).toBe("text");
   });
 });
@@ -37,6 +40,53 @@ describe("normalizeGoogleTextDetection", () => {
 
   it("surfaces provider errors", () => {
     expect(() => normalizeGoogleTextDetection({ responses: [{ error: { message: "denied" } }] }, 10, 10)).toThrow();
+  });
+
+  it("joins OCR words into contextual sensitive candidates", () => {
+    const word = (description: string, left: number, right: number, top = 10) => ({
+      description,
+      boundingPoly: {
+        vertices: [
+          { x: left, y: top },
+          { x: right, y: top },
+          { x: right, y: top + 18 },
+          { x: left, y: top + 18 },
+        ],
+      },
+    });
+    const result = normalizeGoogleTextDetection({
+      responses: [{
+        textAnnotations: [
+          { description: "hello @ example.com 010 - 1234 - 5678" },
+          word("hello", 10, 50),
+          word("@", 54, 60),
+          word("example.com", 64, 140),
+          word("010", 160, 184),
+          word("-", 187, 190),
+          word("1234", 193, 225),
+          word("-", 228, 231),
+          word("5678", 234, 266),
+        ],
+      }],
+    }, 300, 100);
+
+    expect(result.map((candidate) => candidate.kind).sort()).toEqual(["email", "phone"]);
+    expect(result.every((candidate) => candidate.suggested)).toBe(true);
+    expect(result.find((candidate) => candidate.kind === "email")?.text).toBe("hello @ example.com");
+  });
+
+  it("does not join distant columns on the same row", () => {
+    const result = normalizeGoogleTextDetection({
+      responses: [{
+        textAnnotations: [
+          { description: "hello @ example.com" },
+          { description: "hello", boundingPoly: { vertices: [{ x: 0, y: 10 }, { x: 30, y: 10 }, { x: 30, y: 30 }, { x: 0, y: 30 }] } },
+          { description: "@example.com", boundingPoly: { vertices: [{ x: 300, y: 10 }, { x: 380, y: 10 }, { x: 380, y: 30 }, { x: 300, y: 30 }] } },
+        ],
+      }],
+    }, 400, 100);
+
+    expect(result.map((candidate) => candidate.kind)).toEqual(["account", "text"]);
   });
 });
 
