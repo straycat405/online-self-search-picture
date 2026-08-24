@@ -9,6 +9,10 @@ import {
   type NormalizedRegion,
 } from "@/lib/redaction/geometry";
 import type { PrivacyScanResponse } from "@/lib/privacy/types";
+import {
+  normalizeQrDetections,
+  type BarcodeDetection,
+} from "@/lib/privacy/local-barcode";
 
 type ImageSize = { width: number; height: number };
 type DragState = { pointerId: number; start: { x: number; y: number } };
@@ -18,6 +22,10 @@ type ReviewRegion = NormalizedRegion & {
   source: "automatic" | "manual";
   selected: boolean;
 };
+type BarcodeDetectorInstance = {
+  detect(source: ImageBitmap): Promise<BarcodeDetection[]>;
+};
+type BarcodeDetectorConstructor = new (options: { formats: string[] }) => BarcodeDetectorInstance;
 
 const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_FILE_SIZE = 12 * 1024 * 1024;
@@ -61,6 +69,7 @@ export function SafeUploadFlow() {
   const [automaticScan, setAutomaticScan] = useState(true);
   const [isScanning, setIsScanning] = useState(false);
   const [scanNotice, setScanNotice] = useState<string | null>(null);
+  const [qrNotice, setQrNotice] = useState<string | null>(null);
   const [showOtherText, setShowOtherText] = useState(false);
 
   const selectedRegions = regions.filter((region) => region.selected);
@@ -106,15 +115,19 @@ export function SafeUploadFlow() {
       setResultUrl(null);
       setRegions([]);
       setScanNotice(null);
+      setQrNotice(null);
       setShowOtherText(false);
-      if (automaticScan) void scanImage(nextFile, nextSize);
+      const requestId = ++scanRequestRef.current;
+      if (automaticScan) {
+        void scanImage(nextFile, nextSize, requestId);
+        void scanQrCodes(nextFile, nextSize, requestId);
+      }
     } catch {
       setError("이미지를 읽지 못했어요. 다른 파일을 선택해주세요.");
     }
   }
 
-  async function scanImage(image: File, size: ImageSize) {
-    const requestId = ++scanRequestRef.current;
+  async function scanImage(image: File, size: ImageSize, requestId: number) {
     setIsScanning(true);
     const formData = new FormData();
     formData.set("image", image);
@@ -137,18 +150,55 @@ export function SafeUploadFlow() {
         source: "automatic",
         selected: candidate.suggested,
       }));
-      setRegions(automaticRegions);
+      setRegions((current) => [
+        ...current.filter(
+          (region) => region.source === "manual" || region.id.startsWith("local-qr-"),
+        ),
+        ...automaticRegions,
+      ]);
       const suggestedCount = automaticRegions.filter((region) => region.selected).length;
       setScanNotice(
         automaticRegions.length
-          ? `텍스트 ${automaticRegions.length}개를 찾았고, 민감 정보 후보 ${suggestedCount}개를 먼저 선택했어요.`
-          : "자동으로 찾은 텍스트가 없어요. 필요한 영역을 직접 드래그해주세요.",
+          ? `검토 영역 ${automaticRegions.length}개를 찾았고, 민감 정보 후보 ${suggestedCount}개를 먼저 선택했어요.`
+          : "자동으로 찾은 영역이 없어요. 필요한 부분을 직접 드래그해주세요.",
       );
     } catch (caught) {
       if (requestId !== scanRequestRef.current) return;
       setScanNotice(caught instanceof Error ? caught.message : "자동 탐지에 실패했어요. 수동 선택은 계속 사용할 수 있어요.");
     } finally {
       if (requestId === scanRequestRef.current) setIsScanning(false);
+    }
+  }
+
+  async function scanQrCodes(image: File, size: ImageSize, requestId: number) {
+    const Detector = (window as unknown as { BarcodeDetector?: BarcodeDetectorConstructor }).BarcodeDetector;
+    if (!Detector) return;
+    try {
+      const bitmap = await createImageBitmap(image);
+      let detections: BarcodeDetection[];
+      try {
+        detections = await new Detector({ formats: ["qr_code"] }).detect(bitmap);
+      } finally {
+        bitmap.close();
+      }
+      if (requestId !== scanRequestRef.current) return;
+      const qrCandidates = normalizeQrDetections(detections, size.width, size.height);
+      const qrRegions: ReviewRegion[] = qrCandidates.map((candidate) => ({
+        ...candidate.region,
+        label: candidate.label,
+        text: candidate.text,
+        source: "automatic",
+        selected: true,
+      }));
+      setRegions((current) => [
+        ...current.filter((region) => !region.id.startsWith("local-qr-")),
+        ...qrRegions,
+      ]);
+      setQrNotice(
+        qrRegions.length ? `QR 코드 ${qrRegions.length}개는 기기에서 찾았어요.` : null,
+      );
+    } catch {
+      if (requestId === scanRequestRef.current) setQrNotice(null);
     }
   }
 
@@ -232,6 +282,7 @@ export function SafeUploadFlow() {
     setRegions([]);
     setError(null);
     setScanNotice(null);
+    setQrNotice(null);
     setIsScanning(false);
     setShowOtherText(false);
     if (inputRef.current) inputRef.current.value = "";
@@ -264,14 +315,14 @@ export function SafeUploadFlow() {
             type="checkbox"
           />
           <span>
-            <strong>자동 텍스트 탐지 사용</strong>
-            <small>이미지를 저장하지 않고 Google Cloud Vision으로 텍스트 영역을 확인합니다.</small>
+            <strong>자동 개인정보 후보 탐지 사용</strong>
+            <small>Google Cloud Vision으로 텍스트·얼굴을 확인하고, 지원되는 브라우저에서는 QR도 기기 안에서 확인합니다.</small>
           </span>
         </label>
         {error && <p className="form-error" role="alert">{error}</p>}
         <div className="local-processing-note">
           <strong>원본을 보관하지 않아요</strong>
-          <p>자동 탐지를 켜면 이미지는 텍스트 분석을 위해 Google Cloud Vision에 한 번 전달되지만 서버나 데이터베이스에 저장하지 않습니다. 끄면 모든 편집이 브라우저 안에서만 처리됩니다.</p>
+          <p>자동 탐지를 켜면 이미지는 텍스트·얼굴 분석을 위해 Google Cloud Vision에 한 번 전달되지만 서버나 데이터베이스에 저장하지 않습니다. 끄면 모든 편집이 브라우저 안에서만 처리됩니다.</p>
         </div>
       </section>
     );
@@ -333,7 +384,10 @@ export function SafeUploadFlow() {
                 {isScanning ? "텍스트를 찾는 중…" : `가릴 영역 ${selectedRegions.length}개`}
               </span>
               <h2>가릴 정보가 모두 포함됐나요?</h2>
-              <p>{scanNotice ?? "자동으로 찾은 후보를 검토하거나 이미지 위를 직접 드래그해 영역을 추가해주세요."}</p>
+              <p>
+                {scanNotice ?? "자동으로 찾은 후보를 검토하거나 이미지 위를 직접 드래그해 영역을 추가해주세요."}
+                {qrNotice && ` ${qrNotice}`}
+              </p>
               <ol className="region-list">
                 {visibleRegions.map((region) => (
                   <li className={region.selected ? "is-selected" : ""} key={region.id}>

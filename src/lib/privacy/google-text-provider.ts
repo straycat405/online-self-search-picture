@@ -16,6 +16,10 @@ type GoogleTextResponse = {
   responses?: Array<{
     error?: { message?: unknown };
     textAnnotations?: TextAnnotation[];
+    faceAnnotations?: Array<{
+      boundingPoly?: { vertices?: Vertex[] };
+      detectionConfidence?: unknown;
+    }>;
   }>;
 };
 type TextBox = {
@@ -42,6 +46,9 @@ const labels: Record<PrivacyCandidateKind, string> = {
   address: "주소",
   identifier: "식별번호",
   secret: "인증·비밀정보",
+  face: "얼굴",
+  qr: "QR 코드",
+  license_plate: "차량번호",
   text: "텍스트",
 };
 
@@ -61,6 +68,7 @@ export function classifyDetectedText(text: string): PrivacyCandidateKind {
   if (/^(?:\+?82[-]?)?0?(?:1[016789]|2|[3-6][1-5])[-]?\d{3,4}[-]?\d{4}$/.test(compact)) {
     return "phone";
   }
+  if (/^\d{2,3}[가-힣]\d{4}$/.test(compact)) return "license_plate";
   if (/^\d{6}-?[1-4]\d{6}$/.test(compact) || /^(?:\d{4}-?){3}\d{4}$/.test(compact) || /^\d{2,6}(?:-\d{2,6}){2,4}$/.test(compact)) {
     return "identifier";
   }
@@ -223,7 +231,33 @@ export function normalizeGoogleTextDetection(
         false,
       ),
     );
-  return [...sensitiveCandidates, ...genericCandidates];
+  const faceCandidates = (response?.faceAnnotations ?? []).flatMap((face, index) => {
+    const vertices = face.boundingPoly?.vertices ?? [];
+    if (vertices.length < 2) return [];
+    const xs = vertices.map((vertex) => finiteCoordinate(vertex.x));
+    const ys = vertices.map((vertex) => finiteCoordinate(vertex.y));
+    const left = Math.max(0, Math.min(...xs));
+    const top = Math.max(0, Math.min(...ys));
+    const right = Math.min(imageWidth, Math.max(...xs));
+    const bottom = Math.min(imageHeight, Math.max(...ys));
+    if (right <= left || bottom <= top) return [];
+    const id = `google-face-${index}`;
+    return [{
+      id,
+      kind: "face",
+      label: labels.face,
+      text: `얼굴 ${index + 1}`,
+      suggested: true,
+      region: {
+        id,
+        x: left / imageWidth,
+        y: top / imageHeight,
+        width: (right - left) / imageWidth,
+        height: (bottom - top) / imageHeight,
+      },
+    } satisfies PrivacyCandidate];
+  });
+  return [...faceCandidates, ...sensitiveCandidates, ...genericCandidates];
 }
 
 export class GoogleTextDetectionProvider {
@@ -247,7 +281,10 @@ export class GoogleTextDetectionProvider {
       body: JSON.stringify({
         requests: [{
           image: { content: Buffer.from(imageBytes).toString("base64") },
-          features: [{ type: "TEXT_DETECTION", maxResults: 100 }],
+          features: [
+            { type: "TEXT_DETECTION", maxResults: 100 },
+            { type: "FACE_DETECTION", maxResults: 20 },
+          ],
         }],
       }),
       signal: AbortSignal.timeout(30_000),

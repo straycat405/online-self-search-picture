@@ -9,6 +9,7 @@ describe("classifyDetectedText", () => {
   it("classifies common sensitive text patterns", () => {
     expect(classifyDetectedText("hello@example.com")).toBe("email");
     expect(classifyDetectedText("010-1234-5678")).toBe("phone");
+    expect(classifyDetectedText("12가3456")).toBe("license_plate");
     expect(classifyDetectedText("www.example.com/account")).toBe("url");
     expect(classifyDetectedText("@private_user")).toBe("account");
     expect(classifyDetectedText("서울특별시마포구월드컵북로12")).toBe("address");
@@ -88,6 +89,28 @@ describe("normalizeGoogleTextDetection", () => {
 
     expect(result.map((candidate) => candidate.kind)).toEqual(["account", "text"]);
   });
+
+  it("adds face regions as review candidates", () => {
+    const result = normalizeGoogleTextDetection({
+      responses: [{
+        faceAnnotations: [{
+          detectionConfidence: 0.98,
+          boundingPoly: {
+            vertices: [
+              { x: 20, y: 10 },
+              { x: 80, y: 10 },
+              { x: 80, y: 70 },
+              { x: 20, y: 70 },
+            ],
+          },
+        }],
+      }],
+    }, 100, 100);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ kind: "face", label: "얼굴", suggested: true });
+    expect(result[0].region).toMatchObject({ x: 0.2, y: 0.1, width: 0.6, height: 0.6 });
+  });
 });
 
 describe("GoogleTextDetectionProvider", () => {
@@ -103,6 +126,7 @@ describe("GoogleTextDetectionProvider", () => {
     expect(new Headers(capturedInit?.headers).get("x-goog-api-key")).toBe("server-secret");
     expect(JSON.parse(String(capturedInit?.body)).requests[0].features).toEqual([
       { type: "TEXT_DETECTION", maxResults: 100 },
+      { type: "FACE_DETECTION", maxResults: 20 },
     ]);
   });
 });

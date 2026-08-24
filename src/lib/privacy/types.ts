@@ -8,6 +8,9 @@ export type PrivacyCandidateKind =
   | "address"
   | "identifier"
   | "secret"
+  | "face"
+  | "qr"
+  | "license_plate"
   | "text";
 
 export type PrivacyCandidate = {
