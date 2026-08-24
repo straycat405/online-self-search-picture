@@ -17,6 +17,7 @@ export type SearchInput = {
   fileName: string;
   fileSize: number;
   mimeType: string;
+  imageBytes?: Uint8Array;
 };
 
 export type SearchResponse = {

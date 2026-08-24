@@ -63,6 +63,22 @@ export async function POST(
     return NextResponse.json({ message: "이미 시작된 검색 작업이에요." }, { status: 409 });
   }
 
+  const { data: photo, error: downloadError } = await supabase.storage
+    .from("search-photos")
+    .download(job.photo_object_path);
+
+  if (downloadError || !photo || photo.size !== job.file_size) {
+    await supabase.rpc("fail_search_job", {
+      requested_job_id: jobId,
+      failure_code: downloadError ? "photo_download_failed" : "photo_size_mismatch",
+    });
+    return NextResponse.json(
+      { message: "업로드된 검색 사진을 안전하게 읽지 못했어요." },
+      { status: 400 },
+    );
+  }
+
+  const imageBytes = new Uint8Array(await photo.arrayBuffer());
   const provider = new MockSearchProvider();
   let rawCandidates: SearchCandidate[];
   try {
@@ -70,6 +86,7 @@ export async function POST(
       fileName,
       fileSize: job.file_size,
       mimeType: job.mime_type,
+      imageBytes,
     });
   } catch {
     await supabase.rpc("fail_search_job", {

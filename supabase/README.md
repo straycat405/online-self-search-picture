@@ -56,3 +56,8 @@ request carrying `x-cleanup-secret` returns `200`, and scheduled invocations
 appear every five minutes. To smoke-test expiry without uploading a real photo,
 run the INSERT in `setup/verify_cleanup.sql.example`, wait at least six minutes,
 and run its final SELECT. The fixture count must change from `1` to `0`.
+
+Search providers execute only after the server downloads the caller's private
+Storage object into memory and confirms that its byte length matches the
+server-owned job metadata. Provider adapters receive these bytes directly; the
+application does not create a public photo URL for provider integration.
